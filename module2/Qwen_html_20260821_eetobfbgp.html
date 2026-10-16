@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Ordonnancement Round-Robin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: radial-gradient(ellipse at center, #1a1f2e 0%, #07090f 100%);
+    color: #e4e6eb;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 20px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 300;
+    letter-spacing: 3px;
+    margin-bottom: 20px;
+    background: linear-gradient(90deg, #00d9ff, #a855f7, #ff6b6b);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-transform: uppercase;
+  }
+
+  .subtitle {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 30px;
+    letter-spacing: 1px;
+  }
+
+  .stage {
+    position: relative;
+    width: 960px;
+    height: 520px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 24px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+  }
+
+  /* Grille subtile en arrière-plan */
+  .stage::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+
+  .section-label {
+    position: absolute;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #475569;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  /* ============ FILE D'ATTENTE ============ */
+  .queue-zone {
+    position: absolute;
+    left: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 150px;
+    height: 320px;
+  }
+
+  .queue-zone .section-label {
+    top: -25px;
+    left: 0;
+  }
+
+  .queue-slot {
+    position: absolute;
+    left: 0;
+    width: 150px;
+    height: 70px;
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+  }
+
+  .queue-slot:nth-child(2) { top: 0; }
+  .queue-slot:nth-child(3) { top: 90px; }
+  .queue-slot:nth-child(4) { top: 180px; }
+
+  /* ============ PROCESSUS ============ */
+  .process {
+    position: absolute;
+    width: 130px;
+    height: 60px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: 1px;
+    transition: all 0.9s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: default;
+    user-select: none;
+    z-index: 10;
+  }
+
+  .process::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+    background: inherit;
+    opacity: 0.15;
+    z-index: -1;
+  }
+
+  .process.p1 {
+    background: rgba(0, 217, 255, 0.15);
+    border: 2px solid #00d9ff;
+    color: #00d9ff;
+    box-shadow: 0 0 25px rgba(0, 217, 255, 0.3);
+  }
+  .process.p2 {
+    background: rgba(168, 85, 247, 0.15);
+    border: 2px solid #a855f7;
+    color: #a855f7;
+    box-shadow: 0 0 25px rgba(168, 85, 247, 0.3);
+  }
+  .process.p3 {
+    background: rgba(255, 107, 107, 0.15);
+    border: 2px solid #ff6b6b;
+    color: #ff6b6b;
+    box-shadow: 0 0 25px rgba(255, 107, 107, 0.3);
+  }
+
+  .process.running {
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); filter: brightness(1); }
+    50% { transform: scale(1.05); filter: brightness(1.3); }
+  }
+
+  /* ============ CPU ============ */
+  .cpu-zone {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .cpu-zone .section-label {
+    position: absolute;
+    top: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .cpu {
+    width: 200px;
+    height: 200px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border: 2px solid #334155;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: all 0.4s ease;
+  }
+
+  .cpu.active {
+    border-color: #00d9ff;
+    box-shadow:
+      0 0 40px rgba(0, 217, 255, 0.4),
+      inset 0 0 30px rgba(0, 217, 255, 0.1);
+  }
+
+  .cpu.active.p2-active {
+    border-color: #a855f7;
+    box-shadow:
+      0 0 40px rgba(168, 85, 247, 0.4),
+      inset 0 0 30px rgba(168, 85, 247, 0.1);
+  }
+
+  .cpu.active.p3-active {
+    border-color: #ff6b6b;
+    box-shadow:
+      0 0 40px rgba(255, 107, 107, 0.4),
+      inset 0 0 30px rgba(255, 107, 107, 0.1);
+  }
+
+  .cpu-icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+    color: #475569;
+    transition: color 0.3s;
+  }
+
+  .cpu.active .cpu-icon { color: #e4e6eb; }
+
+  .cpu-label {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: #94a3b8;
+  }
+
+  .cpu-current {
+    margin-top: 10px;
+    font-size: 14px;
+    color: #64748b;
+    letter-spacing: 1px;
+  }
+
+  /* ============ PANNEAU QUANTUM ============ */
+  .quantum-panel {
+    position: absolute;
+    right: 40px;
+    top: 40px;
+    width: 180px;
+    padding: 18px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+  }
+
+  .quantum-panel .section-label {
+    position: static;
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .quantum-bar {
+    height: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+
+  .quantum-fill {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #00d9ff, #a855f7);
+    border-radius: 5px;
+    transition: width 0.1s linear;
+    box-shadow: 0 0 10px rgba(0, 217, 255, 0.5);
+  }
+
+  .quantum-value {
+    font-size: 32px;
+    font-weight: 700;
+    text-align: center;
+    color: #e4e6eb;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .quantum-unit {
+    font-size: 12px;
+    color: #64748b;
+    text-align: center;
+    margin-top: 4px;
+    letter-spacing: 1px;
+  }
+
+  /* ============ TIMER GLOBAL ============ */
+  .timer-panel {
+    position: absolute;
+    right: 40px;
+    top: 200px;
+    width: 180px;
+    padding: 14px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    text-align: center;
+  }
+
+  .timer-panel .section-label {
+    position: static;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .timer-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: #00d9ff;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ============ TIMELINE / GANTT ============ */
+  .timeline-zone {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    bottom: 30px;
+    height: 80px;
+  }
+
+  .timeline-zone .section-label {
+    top: -22px;
+    left: 0;
+  }
+
+  .timeline-track {
+    position: absolute;
+    top: 20px;
+    left: 0;
+    right: 0;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+  }
+
+  .gantt-block {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 1px;
+    opacity: 0;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: opacity 0.3s, transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    border-right: 1px solid rgba(0, 0, 0, 0.3);
+  }
+
+  .gantt-block.visible {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  .gantt-block.p1 { background: rgba(0, 217, 255, 0.4); color: #00d9ff; }
+  .gantt-block.p2 { background: rgba(168, 85, 247, 0.4); color: #a855f7; }
+  .gantt-block.p3 { background: rgba(255, 107, 107, 0.4); color: #ff6b6b; }
+
+  .timeline-ticks {
+    position: absolute;
+    top: 62px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: #475569;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ============ BOUTON ============ */
+  .controls {
+    margin-top: 25px;
+    display: flex;
+    gap: 12px;
+  }
+
+  button {
+    padding: 10px 24px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #e4e6eb;
+    border-radius: 10px;
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-weight: 600;
+  }
+
+  button:hover {
+    background: rgba(0, 217, 255, 0.1);
+    border-color: #00d9ff;
+    color: #00d9ff;
+    box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+  }
+
+  /* ============ ÉTATS / LOG ============ */
+  .status-log {
+    position: absolute;
+    right: 40px;
+    bottom: 140px;
+    width: 180px;
+    padding: 12px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    font-size: 12px;
+    min-height: 60px;
+  }
+
+  .status-log .section-label {
+    position: static;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .status-text {
+    color: #94a3b8;
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .status-text .hl-p1 { color: #00d9ff; font-weight: 600; }
+  .status-text .hl-p2 { color: #a855f7; font-weight: 600; }
+  .status-text .hl-p3 { color: #ff6b6b; font-weight: 600; }
+</style>
+</head>
+<body>
+
+  <h1>Ordonnancement Round-Robin</h1>
+  <div class="subtitle">Quantum = 3 unités · 3 processus · File FIFO</div>
+
+  <div class="stage">
+
+    <!-- FILE D'ATTENTE -->
+    <div class="queue-zone">
+      <span class="section-label">File d'attente</span>
+      <div class="queue-slot"></div>
+      <div class="queue-slot"></div>
+      <div class="queue-slot"></div>
+    </div>
+
+    <!-- CPU -->
+    <div class="cpu-zone">
+      <span class="section-label">Processeur</span>
+      <div class="cpu" id="cpu">
+        <div class="cpu-icon">⚙</div>
+        <div class="cpu-label">CPU</div>
+        <div class="cpu-current" id="cpuCurrent">— idle —</div>
+      </div>
+    </div>
+
+    <!-- QUANTUM -->
+    <div class="quantum-panel">
+      <span class="section-label">Quantum</span>
+      <div class="quantum-bar">
+        <div class="quantum-fill" id="quantumFill"></div>
+      </div>
+      <div class="quantum-value" id="quantumValue">3</div>
+      <div class="quantum-unit">unités restantes</div>
+    </div>
+
+    <!-- TIMER -->
+    <div class="timer-panel">
+      <span class="section-label">Temps global</span>
+      <div class="timer-value" id="timerValue">0.0s</div>
+    </div>
+
+    <!-- LOG -->
+    <div class="status-log">
+      <span class="section-label">Événement</span>
+      <div class="status-text" id="statusText">Initialisation…</div>
+    </div>
+
+    <!-- TIMELINE -->
+    <div class="timeline-zone">
+      <span class="section-label">Diagramme de Gantt</span>
+      <div class="timeline-track" id="timelineTrack"></div>
+      <div class="timeline-ticks" id="timelineTicks"></div>
+    </div>
+
+  </div>
+
+  <div class="controls">
+    <button id="restartBtn">↻ Rejouer</button>
+  </div>
+
+<script>
+/* ============================================================
+   ORCHESTRATION DE L'ANIMATION ROUND-ROBIN
+   Durée totale : 10 secondes
+   ============================================================ */
+
+const QUANTUM_MAX = 3;
+
+// Positions des slots de la file (relative au .stage)
+const QUEUE_POSITIONS = [
+  { left: 40,  top: 205 }, // slot 1 (tête de file)
+  { left: 40,  top: 295 }, // slot 2
+  { left: 40,  top: 385 }  // slot 3
+];
+
+// Position du CPU (centre du stage)
+const CPU_POS = { left: 415, top: 230 };
+
+// Références DOM
+const processes = {};
+const cpuEl = document.getElementById('cpu');
+const cpuCurrentEl = document.getElementById('cpuCurrent');
+const quantumFill = document.getElementById('quantumFill');
+const quantumValue = document.getElementById('quantumValue');
+const timerValue = document.getElementById('timerValue');
+const statusText = document.getElementById('statusText');
+const timelineTrack = document.getElementById('timelineTrack');
+const timelineTicks = document.getElementById('timelineTicks');
+const stage = document.querySelector('.stage');
+
+// Création des 3 processus
+['p1', 'p2', 'p3'].forEach((id, i) => {
+  const el = document.createElement('div');
+  el.className = `process ${id}`;
+  el.textContent = id.toUpperCase();
+  el.id = id;
+  stage.appendChild(el);
+  processes[id] = el;
+});
+
+// Gradation des ticks de la timeline (0s à 10s)
+for (let i = 0; i <= 10; i++) {
+  const tick = document.createElement('span');
+  tick.textContent = i + 's';
+  timelineTicks.appendChild(tick);
+}
+
+/* ---------- Helpers d'animation ---------- */
+
+function moveProcess(proc, pos) {
+  proc.style.left = pos.left + 'px';
+  proc.style.top  = pos.top  + 'px';
+}
+
+function setQuantum(value) {
+  const ratio = Math.max(0, Math.min(1, value / QUANTUM_MAX));
+  quantumFill.style.width = (ratio * 100) + '%';
+  quantumValue.textContent = value.toFixed(1);
+}
+
+function setTimer(t) {
+  timerValue.textContent = t.toFixed(1) + 's';
+}
+
+function setStatus(html) {
+  statusText.innerHTML = html;
+}
+
+function activateCPU(procId) {
+  cpuEl.classList.add('active');
+  cpuEl.classList.remove('p2-active', 'p3-active');
+  if (procId === 'p2') cpuEl.classList.add('p2-active');
+  if (procId === 'p3') cpuEl.classList.add('p3-active');
+  processes[procId].classList.add('running');
+  cpuCurrentEl.textContent = '▶ ' + procId.toUpperCase();
+  cpuCurrentEl.style.color = getComputedStyle(processes[procId]).color;
+}
+
+function deactivateCPU() {
+  cpuEl.classList.remove('active', 'p2-active', 'p3-active');
+  Object.values(processes).forEach(p => p.classList.remove('running'));
+  cpuCurrentEl.textContent = '— idle —';
+  cpuCurrentEl.style.color = '#64748b';
+}
+
+/* Ajoute un bloc au diagramme de Gantt */
+function addGanttBlock(procId, startPct, widthPct) {
+  const block = document.createElement('div');
+  block.className = `gantt-block ${procId}`;
+  block.textContent = procId.toUpperCase();
+  block.style.width = widthPct + '%';
+  block.style.position = 'absolute';
+  block.style.left = startPct + '%';
+  timelineTrack.appendChild(block);
+  // Déclenche l'animation après un micro-délai
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => block.classList.add('visible'));
+  });
+  return block;
+}
+
+/* Animation fluide du quantum qui décompte */
+function animateQuantum(from, to, duration, onUpdate, onDone) {
+  const start = performance.now();
+  function step(now) {
+    const elapsed = now - start;
+    const t = Math.min(1, elapsed / duration);
+    const val = from + (to - from) * t;
+    onUpdate(val);
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      if (onDone) onDone();
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+/* Petit délai promifié */
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* ============================================================
+   SCÉNARIO (10 secondes)
+   - 0.0s → état initial : P1, P2, P3 dans la file
+   - 0.5s → P1 entre dans le CPU
+   - 1.0s → P1 exécute, quantum 3 → 0 (3s)
+   - 4.0s → P1 retourne en file (derrière P3), P2 entre
+   - 5.0s → P2 exécute, quantum 3 → 0 (3s)
+   - 8.0s → P2 retourne en file, P3 entre
+   - 8.5s → P3 exécute, quantum 3 → 0 (3s)
+   - 10.0s → fin, P3 retourne en file
+   ============================================================ */
+
+async function runAnimation() {
+  // Reset
+  timelineTrack.innerHTML = '';
+  deactivateCPU();
+  setQuantum(QUANTUM_MAX);
+  setTimer(0);
+  setStatus('Initialisation…');
+
+  // État initial : P1, P2, P3 dans la file
+  moveProcess(processes.p1, QUEUE_POSITIONS[0]);
+  moveProcess(processes.p2, QUEUE_POSITIONS[1]);
+  moveProcess(processes.p3, QUEUE_POSITIONS[2]);
+
+  await wait(500);
+
+  /* ---------- TOUR 1 : P1 ---------- */
+  setStatus('<span class="hl-p1">P1</span> sélectionné → CPU');
+  moveProcess(processes.p1, CPU_POS);
+  await wait(700);
+
+  activateCPU('p1');
+  setStatus('<span class="hl-p1">P1</span> en cours d\'exécution');
+  addGanttBlock('p1', 10, 30); // 1s → 4s
+
+  animateQuantum(QUANTUM_MAX, 0, 3000, (v) => {
+    setQuantum(v);
+    setTimer(1 + (3 - v));
+  });
+
+  await wait(3000);
+
+  // P1 retourne en file (derrière P3)
+  deactivateCPU();
+  setStatus('<span class="hl-p1">P1</span> quantum épuisé → file');
+  setQuantum(0);
+  setTimer(4.0);
+
+  // Réorganise la file : P2 en tête, P3 au milieu, P1 en queue
+  moveProcess(processes.p1, QUEUE_POSITIONS[2]);
+  moveProcess(processes.p2, QUEUE_POSITIONS[0]);
+  moveProcess(processes.p3, QUEUE_POSITIONS[1]);
+
+  await wait(800);
+
+  /* ---------- TOUR 2 : P2 ---------- */
+  setStatus('<span class="hl-p2">P2</span> sélectionné → CPU');
+  moveProcess(processes.p2, CPU_POS);
+  await wait(600);
+
+  activateCPU('p2');
+  setStatus('<span class="hl-p2">P2</span> en cours d\'exécution');
+  addGanttBlock('p2', 40, 30); // 4s → 7s (décalé dans le track)
+
+  // Réinitialise le quantum à 3 puis le fait décompter
+  setQuantum(QUANTUM_MAX);
+  animateQuantum(QUANTUM_MAX, 0, 3000, (v) => {
+    setQuantum(v);
+    setTimer(4 + (3 - v));
+  });
+
+  await wait(3000);
+
+  // P2 retourne en file
+  deactivateCPU();
+  setStatus('<span class="hl-p2">P2</span> quantum épuisé → file');
+  setQuantum(0);
+  setTimer(7.0);
+
+  // File : P3, P1, P2
+  moveProcess(processes.p2, QUEUE_POSITIONS[2]);
+  moveProcess(processes.p3, QUEUE_POSITIONS[0]);
+  moveProcess(processes.p1, QUEUE_POSITIONS[1]);
+
+  await wait(800);
+
+  /* ---------- TOUR 3 : P3 ---------- */
+  setStatus('<span class="hl-p3">P3</span> sélectionné → CPU');
+  moveProcess(processes.p3, CPU_POS);
+  await wait(500);
+
+  activateCPU('p3');
+  setStatus('<span class="hl-p3">P3</span> en cours d\'exécution');
+  addGanttBlock('p3', 70, 30); // 7s → 10s
+
+  setQuantum(QUANTUM_MAX);
+  animateQuantum(QUANTUM_MAX, 0, 2500, (v) => {
+    setQuantum(v);
+    setTimer(7 + (3 - v) * (2.5/3));
+  });
+
+  await wait(2500);
+
+  // Fin : P3 retourne en file
+  deactivateCPU();
+  setStatus('<span class="hl-p3">P3</span> quantum épuisé → file');
+  setQuantum(0);
+  setTimer(10.0);
+
+  // File finale : P1, P2, P3
+  moveProcess(processes.p3, QUEUE_POSITIONS[2]);
+  moveProcess(processes.p1, QUEUE_POSITIONS[0]);
+  moveProcess(processes.p2, QUEUE_POSITIONS[1]);
+
+  await wait(500);
+  setStatus('Cycle Round-Robin terminé ✓');
+}
+
+/* ---------- Lancement ---------- */
+document.getElementById('restartBtn').addEventListener('click', () => {
+  runAnimation();
+});
+
+// Lancement initial
+runAnimation();
+</script>
+</body>
+</html>
